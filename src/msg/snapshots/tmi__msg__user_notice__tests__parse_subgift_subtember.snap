@@ -1,0 +1,49 @@
+---
+source: src/msg/user_notice.rs
+expression: "f(\"@badge-info=subscriber/2;badges=subscriber/2,sub-gift-leader/2;color=#FF0000;display-name=VALORANT;emotes=;flags=;id=d4726c39-a5f3-4db6-99f9-b8e16176eb98;login=valorant;mod=0;msg-id=submysterygift;msg-param-community-gift-id=6234683999269936493;msg-param-gift-match-bonus-count=1;msg-param-gift-match-extra-count=0;msg-param-gift-match-gifter-display-name=isntyourname123;msg-param-gift-match=bonus;msg-param-mass-gift-count=1;msg-param-origin-id=6234683999269936493;msg-param-sub-plan=1000;room-id=719949561;subscriber=1;system-msg=We\\\\sadded\\\\s1\\\\sGift\\\\sSubs\\\\sto\\\\sisntyourname123's\\\\sgift!;tmi-sent-ts=1758924748531;user-id=490592527;user-type=;vip=0 :tmi.twitch.tv USERNOTICE #crelly\")"
+---
+UserNotice {
+    channel: "#crelly",
+    channel_id: "719949561",
+    sender: Some(
+        User {
+            id: "490592527",
+            login: "valorant",
+            name: "VALORANT",
+        },
+    ),
+    text: None,
+    system_message: Some(
+        "We\\sadded\\s1\\sGift\\sSubs\\sto\\sisntyourname123's\\sgift!",
+    ),
+    event: SubMysteryGift(
+        SubMysteryGift {
+            count: 1,
+            sender_total_gifts: None,
+            sub_plan: "1000",
+        },
+    ),
+    event_id: "submysterygift",
+    badges: [
+        Subscriber(
+            Subscriber {
+                version: "2",
+                months: "2",
+                months_n: 2,
+            },
+        ),
+        Other(
+            BadgeData {
+                name: "sub-gift-leader",
+                version: "2",
+                extra: None,
+            },
+        ),
+    ],
+    emotes: "",
+    color: Some(
+        "#FF0000",
+    ),
+    message_id: "d4726c39-a5f3-4db6-99f9-b8e16176eb98",
+    timestamp: 2025-09-26T22:12:28.531Z,
+}

@@ -19,7 +19,9 @@ UserNotice {
     event: SubMysteryGift(
         SubMysteryGift {
             count: 20,
-            sender_total_gifts: 100,
+            sender_total_gifts: Some(
+                100,
+            ),
             sub_plan: "1000",
         },
     ),
