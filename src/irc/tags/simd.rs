@@ -129,7 +129,7 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
   // it's fine if we overlap the next vector-size chunk with
   // some part of the first chunk, because we already know
   // that there is no match in the first vector-size bytes.
-  let data_addr = data.as_ptr() as usize;
+  let data_addr = data.as_ptr().addr();
   let aligned_start_addr = data_addr + V::SIZE - (data_addr % V::SIZE);
   let aligned_start_offset = aligned_start_addr - data_addr;
 

@@ -39,7 +39,7 @@ impl Vector {
   pub fn load_aligned(data: &[u8], offset: usize) -> Self {
     unsafe {
       debug_assert!(data[offset..].len() >= 32);
-      debug_assert!(data.as_ptr().add(offset) as usize % 32 == 0);
+      debug_assert!(data.as_ptr().add(offset).addr().is_multiple_of(32));
       Self(_mm256_load_si256(
         data.as_ptr().add(offset) as *const __m256i
       ))
@@ -66,7 +66,7 @@ impl Vector {
   #[inline(always)]
   pub fn movemask(self) -> Mask {
     unsafe {
-      let value = std::mem::transmute::<i32, u32>(_mm256_movemask_epi8(self.0));
+      let value = _mm256_movemask_epi8(self.0).cast_unsigned();
       Mask(value)
     }
   }

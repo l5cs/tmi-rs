@@ -73,7 +73,7 @@ impl Vector {
   pub fn load_aligned(data: &[u8], offset: usize) -> Self {
     unsafe {
       debug_assert!(data[offset..].len() >= 16);
-      debug_assert!(data.as_ptr().add(offset) as usize % 16 == 0);
+      debug_assert!(data.as_ptr().add(offset).addr().is_multiple_of(16));
       Self(vld1q_u8(data.as_ptr().add(offset)))
     }
   }
