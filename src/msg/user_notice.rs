@@ -799,6 +799,11 @@ mod tests {
     assert_irc_snapshot!(UserNotice, "@badge-info=;badges=sub-gifter/50;color=;display-name=AdamAtReflectStudios;emotes=;flags=;id=7f1336e4-f84a-4510-809d-e57bf50af0cc;login=adamatreflectstudios;mod=0;msg-id=rewardgift;msg-param-domain=pride_megacommerce_2020;msg-param-selected-count=100;msg-param-total-reward-count=100;msg-param-trigger-amount=20;msg-param-trigger-type=SUBGIFT;room-id=71092938;subscriber=0;system-msg=AdamAtReflectStudios's\\sGift\\sshared\\srewards\\sto\\s100\\sothers\\sin\\sChat!;tmi-sent-ts=1594583778756;user-id=211711554;user-type= :tmi.twitch.tv USERNOTICE #xqcow");
   }
 
+  #[test]
+  fn parse_subgift_subtember() {
+    assert_irc_snapshot!(UserNotice, "@badge-info=subscriber/2;badges=subscriber/2,sub-gift-leader/2;color=#FF0000;display-name=VALORANT;emotes=;flags=;id=d4726c39-a5f3-4db6-99f9-b8e16176eb98;login=valorant;mod=0;msg-id=submysterygift;msg-param-community-gift-id=6234683999269936493;msg-param-gift-match-bonus-count=1;msg-param-gift-match-extra-count=0;msg-param-gift-match-gifter-display-name=isntyourname123;msg-param-gift-match=bonus;msg-param-mass-gift-count=1;msg-param-origin-id=6234683999269936493;msg-param-sub-plan=1000;room-id=719949561;subscriber=1;system-msg=We\\sadded\\s1\\sGift\\sSubs\\sto\\sisntyourname123's\\sgift!;tmi-sent-ts=1758924748531;user-id=490592527;user-type=;vip=0 :tmi.twitch.tv USERNOTICE #crelly");
+  }
+
   #[cfg(feature = "serde")]
   #[test]
   fn roundtrip_user_notice_announcement() {
@@ -897,7 +902,7 @@ mod tests {
 
   #[cfg(feature = "serde")]
   #[test]
-  fn todo_test() {
+  fn roundtrip_subgift_subtember() {
     assert_irc_roundtrip!(UserNotice, "@badge-info=subscriber/2;badges=subscriber/2,sub-gift-leader/2;color=#FF0000;display-name=VALORANT;emotes=;flags=;id=d4726c39-a5f3-4db6-99f9-b8e16176eb98;login=valorant;mod=0;msg-id=submysterygift;msg-param-community-gift-id=6234683999269936493;msg-param-gift-match-bonus-count=1;msg-param-gift-match-extra-count=0;msg-param-gift-match-gifter-display-name=isntyourname123;msg-param-gift-match=bonus;msg-param-mass-gift-count=1;msg-param-origin-id=6234683999269936493;msg-param-sub-plan=1000;room-id=719949561;subscriber=1;system-msg=We\\sadded\\s1\\sGift\\sSubs\\sto\\sisntyourname123's\\sgift!;tmi-sent-ts=1758924748531;user-id=490592527;user-type=;vip=0 :tmi.twitch.tv USERNOTICE #crelly");
   }
 }
