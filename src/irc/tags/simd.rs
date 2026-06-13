@@ -54,16 +54,34 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
 
   loop {
     match *state {
+      State::Key { .. } if !vector_eq.has_match() && !vector_semi.has_match() => break,
+      State::Key { .. } if !vector_eq.has_match() => {
+        // fuck these retarded empty tags, just skip them
+        // position of `;` + 1 (skipping over it)
+        let m = vector_semi.first_match();
+        vector_semi.clear_to(m);
+        *state = State::Key { key_start: offset + m.as_index() + 1 };
+        // could break here since there are no more equal signs 
+        // but there can be more than 1 empty tag so we need to skip over them all
+        // break;
+      }
       State::Key { key_start } => {
-        if !vector_eq.has_match() {
-          break;
+        let eq_m = vector_eq.first_match();
+        let semi_m = vector_semi.first_match();
+
+        if semi_m.as_index() < eq_m.as_index() {
+          // multiple tags in chunk and the current tag is empty
+          // skip the empty tag
+          vector_eq.clear_to(semi_m);
+          vector_semi.clear_to(semi_m);
+          *state = State::Key { key_start: offset + semi_m.as_index() + 1 };
+          continue;
         }
 
-        let m = vector_eq.first_match();
-        vector_eq.clear_to(m);
-        vector_semi.clear_to(m);
+        vector_eq.clear_to(eq_m);
+        vector_semi.clear_to(eq_m);
 
-        let pos = offset + m.as_index(); // pos of `=`
+        let pos = offset + eq_m.as_index(); // pos of `=`
 
         *state = State::Value {
           key_start,
