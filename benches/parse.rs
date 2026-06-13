@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::hint::black_box;
 
-use criterion::{black_box, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mimalloc::MiMalloc;
-use tmi::IrcMessageRef;
+use tmi::IrcMessageRef as OrigMsgRef;
+use tmi_copy::IrcMessageRef;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -27,6 +28,11 @@ fn twitch(c: &mut Criterion) {
         black_box(IrcMessageRef::parse(line).expect("failed to parse"));
       });
     });
+    c.bench_with_input(BenchmarkId::new("twitch orig", name), &line, |b, line| {
+      b.iter(|| {
+        black_box(OrigMsgRef::parse(line).expect("failed to parse"));
+      });
+    });
   };
 
   bench("long", long_line);
@@ -44,16 +50,5 @@ fn twitch(c: &mut Criterion) {
   });
 }
 
-fn criterion() -> Criterion {
-  Criterion::default()
-    .configure_from_args()
-    .warm_up_time(Duration::from_millis(100))
-    .measurement_time(Duration::from_secs(1))
-    .sample_size(50)
-}
-
-fn main() {
-  let mut criterion = criterion();
-  twitch(&mut criterion);
-  criterion.final_summary();
-}
+criterion_group!(benches, twitch);
+criterion_main!(benches);

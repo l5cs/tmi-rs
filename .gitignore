@@ -2,6 +2,8 @@ target/
 bench/
 tmp/
 
+Cargo.lock
+
 perf.*
 
 CHANGELOG.new.md

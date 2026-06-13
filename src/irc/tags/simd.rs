@@ -1,3 +1,5 @@
+use std::hint::cold_path;
+
 use super::*;
 use crate::irc::wide::Vector as V;
 
@@ -54,8 +56,12 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
 
   loop {
     match *state {
-      State::Key { .. } if !vector_eq.has_match() && !vector_semi.has_match() => break,
+      State::Key { .. } if !vector_eq.has_match() && !vector_semi.has_match() => {
+        cold_path();
+        break;
+      },
       State::Key { .. } if !vector_eq.has_match() => {
+        cold_path();
         // fuck these retarded empty tags, just skip them
         // position of `;` + 1 (skipping over it)
         let m = vector_semi.first_match();
@@ -70,6 +76,7 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
         let semi_m = vector_semi.first_match();
 
         if semi_m.as_index() < eq_m.as_index() {
+          cold_path();
           // multiple tags in chunk and the current tag is empty
           // skip the empty tag
           vector_eq.clear_to(semi_m);
