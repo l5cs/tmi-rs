@@ -1,5 +1,4 @@
 cfg_if::cfg_if! {
-    // NOTE: avx512 is still nightly-only and unstable, so disabled for now
     /* if #[cfg(all(target_feature = "avx512f", target_feature = "avx512bw"))] {
         mod avx512;
         pub(crate) use avx512::Vector;

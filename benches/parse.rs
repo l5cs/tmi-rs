@@ -1,9 +1,9 @@
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mimalloc::MiMalloc;
-use tmi::IrcMessageRef as OrigMsgRef;
-use tmi_copy::IrcMessageRef;
+use tmi::IrcMessageRef;
+use tmi_orig::IrcMessageRef as OrigMsgRef;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
