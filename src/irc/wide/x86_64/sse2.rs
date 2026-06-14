@@ -71,7 +71,7 @@ impl Vector {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct Mask(u32);
+pub struct Mask(pub(in crate::irc::wide) u32);
 
 impl Mask {
   #[inline(always)]
