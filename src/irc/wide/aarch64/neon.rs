@@ -110,6 +110,13 @@ impl Vector {
 #[repr(transparent)]
 pub struct Mask(u64);
 
+#[cfg(debug_assertions)]
+impl core::fmt::Debug for Mask {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(f, "{:064b}", self.0)
+  }
+}
+
 impl Mask {
   #[inline(always)]
   pub fn has_match(&self) -> bool {
@@ -117,38 +124,54 @@ impl Mask {
     self.0 != 0
   }
 
+  /// Returns the character index of the first match.
+  ///
+  /// NEON packs 4 bits per character, so we divide by 4.
   #[inline(always)]
-  pub fn first_match(&self) -> Match {
-    Match(self.0.trailing_zeros() as usize)
+  pub fn first_match(&self) -> u32 {
+    (self.0.trailing_zeros() >> 2) as u32
   }
 
-  /// Clear all bits up to and including `m`.
+  /// Clear the lowest set bit (BLSR).
   #[inline(always)]
-  pub fn clear_to(&mut self, m: Match) {
-    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - (m.0 + 3)));
+  pub fn clear_to_first(&mut self) {
+    self.0 &= self.0 - 1;
   }
-}
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Match(usize);
-
-impl Match {
+  /// intersect this mask with `window`, returning a new mask
   #[inline(always)]
-  pub fn as_index(self) -> usize {
-    // There are 4 bits per character, so divide the trailing zeros by 4 (shift right by 2).
-    self.0 >> 2
+  pub fn window(&self, window: Self) -> Self {
+    Self(self.0 & window.0)
   }
-}
 
-#[cfg(test)]
-mod test {
-  use super::*;
+  /// get the bit window from the start of the chunk up to the first match
+  ///
+  /// handles the empty mask case by returning all-ones (the full chunk window).
+  #[inline(always)]
+  pub fn leading_window(&self) -> Self {
+    let lsb = self.0 & self.0.wrapping_neg();
+    Self(lsb.wrapping_shl(1).wrapping_sub(1))
+  }
 
-  #[test]
-  fn test_clear_to() {
-    let mut mask = Mask(0b00000000_11110000_11111111_00000000);
-    mask.clear_to(mask.first_match());
-    assert_eq!(mask.0, 0b00000000_11110000_11110000_00000000);
+  /// create the bit window from a character index to the end of the mask
+  ///
+  /// `from` is a character index; NEON encodes 4 bits per character.
+  #[inline(always)]
+  pub fn trailing_window(from: u32) -> Self {
+    let bit_pos = from << 2;
+    Self(!((1_u64.wrapping_shl(bit_pos as u64)).wrapping_sub(1)))
+  }
+
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices.
+  ///
+  /// NEON encodes 4 bits per character, so character indices are multiplied by 4.
+  #[inline(always)]
+  pub fn between_window(from: u32, to: u32) -> Self {
+    let from_bit = from << 2;
+    let to_bit = to << 2;
+    Self(
+      ((1_u64.wrapping_shl(to_bit as u64)).wrapping_sub(1))
+        & !((1_u64.wrapping_shl(from_bit as u64)).wrapping_sub(1)),
+    )
   }
 }

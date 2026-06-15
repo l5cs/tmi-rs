@@ -73,6 +73,13 @@ impl Vector {
 #[repr(transparent)]
 pub struct Mask(pub(in crate::irc::wide) u32);
 
+#[cfg(debug_assertions)]
+impl core::fmt::Debug for Mask {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(f, "{:032b}", self.0)
+  }
+}
+
 impl Mask {
   #[inline(always)]
   pub fn has_match(&self) -> bool {
@@ -84,30 +91,38 @@ impl Mask {
     self.0.trailing_zeros()
   }
 
-  /// Clear all bits up to and including `m`.
-  #[inline(always)]
-  pub fn clear_to(&mut self, m: Match) {
-    self.0 &= !(0xffff_ffff >> (31 - m.0));
-  }
-
   #[inline(always)]
   pub fn clear_to_first(&mut self) {
     self.0 &= self.0 - 1;
   }
 
+  /// intersect this mask with `window`, returning a new mask
   #[inline(always)]
-  pub fn window(&self, window: u32) -> u32 {
-    self.0 & window
+  pub fn window(&self, window: Self) -> Self {
+    Self(self.0 & window.0)
   }
-}
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Match(usize);
-
-impl Match {
+  /// get the bit window from the start of the chunk up to the first match
+  ///
+  /// handles the empty mask case by returning all-ones (the full chunk window).
   #[inline(always)]
-  pub fn as_index(&self) -> usize {
-    self.0
+  pub fn leading_window(&self) -> Self {
+    let lsb = self.0 & self.0.wrapping_neg();
+    Self(lsb.wrapping_shl(1).wrapping_sub(1))
+  }
+
+  /// create the bit window from a position in a mask to the end of the mask
+  #[inline(always)]
+  pub fn trailing_window(from: u32) -> Self {
+    Self(!((1_u32.wrapping_shl(from)).wrapping_sub(1)))
+  }
+
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive).
+  #[inline(always)]
+  pub fn between_window(from: u32, to: u32) -> Self {
+    Self(
+      ((1_u32.wrapping_shl(to)).wrapping_sub(1))
+        & !((1_u32.wrapping_shl(from)).wrapping_sub(1)),
+    )
   }
 }

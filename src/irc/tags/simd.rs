@@ -1,7 +1,7 @@
 use std::hint::cold_path;
 
 use super::*;
-use crate::irc::wide::Vector as V;
+use crate::irc::wide::{Mask, Vector as V};
 
 pub(crate) fn parse(src: &str, pos: &mut usize) -> Option<RawTags> {
   const LEADING_AT_LEN: usize = 1;
@@ -28,21 +28,18 @@ pub(crate) fn parse(src: &str, pos: &mut usize) -> Option<RawTags> {
   if remainder.len() - offset > 0 {
     let chunk = V::load_unaligned_remainder(remainder, offset);
     let src_offset = offset + LEADING_AT_LEN;
-    let leftover_len = (remainder.len() % V::SIZE) as u32;
-    parse_leftover(src_offset, leftover_len, chunk, &mut state, &mut tags);
+    parse_chunk(src_offset, chunk, &mut state, &mut tags);
 
     if let State::Value { key_start, key_length } = state {
       // value contains whatever is left after key_end
-
       let pos = remainder.len(); // pos of `;`
-      panic!("{pos} {leftover_len} {key_start} {key_length}");
-
+      // panic!("{pos} {key_start} {key_length}");
       tags.push(TagPair {
         // relative to original `src`
         key_start: key_start as u32,
         key_length: key_length as u16,
         // starts after `=`
-        value_length: (pos - (key_start + key_length + 2)) as u16,
+        value_length: (pos - key_start - key_length) as u16,
       });
     }
   }
@@ -59,138 +56,6 @@ enum State {
   // while `key_end` in `TagPair` is an offset from `key_start` of `TagPair`
   // TODO: rename them on tag pair to key_end_offset or smth
   Value { key_start: usize, key_length: usize },
-}
-
-#[inline(always)]
-fn parse_leftover(offset: usize, leftover_len: u32, chunk: V, state: &mut State, tags: &mut Array<128, TagPair>) {
-  // 1. Get raw scalar integers directly out of the SIMD vectors
-  let eq_mask = chunk.eq(b'=').movemask();
-  let mut semi_mask = chunk.eq(b';').movemask();
-
-  // finish the state from previous chunks so that we can start from a new key
-  let mut chunk_cursor = match *state {
-    State::Value { key_start, key_length } => {
-      if !semi_mask.has_match() {
-        // skip to the next chunk if previous chunk's value doesn't end in this chunk
-        return;
-      }
-      let semi_idx = semi_mask.first_match();
-      let pos = offset + semi_idx as usize;
-      *state = State::Key { key_start: pos };
-      tags.push(TagPair {
-        // relative to original `src`
-        key_start: key_start as u32,
-        key_length: key_length as u16,
-        // starts after `=`, also subtracting the ';' counted in `pos`
-        value_length: (pos - (key_start + key_length + 2)) as u16,
-      });
-
-      semi_mask.clear_to_first();
-      semi_idx + 1
-    }
-    State::Key { key_start } => {
-      if !semi_mask.has_match() && !eq_mask.has_match() {
-        // skip to the next chunk if there are no separators at all
-        return;
-      }
-      let semi_idx = semi_mask.first_match();
-      let bit_window = semi_mask.leading_window();
-
-      let eq_in_window = eq_mask.window(bit_window);
-      if eq_in_window != 0 {
-        // HAPPY PATH: key=value
-        let eq_idx = eq_in_window.trailing_zeros();
-
-        // panic!("{eq_in_window:032b}\n{offset} {key_start} {eq_idx} {padding_len}");
-        tags.push(TagPair {
-          // `State`'s `key_start`s are relative to the tags string (stripped `@` symbol)
-          // while the `key_start` in the `TagPair` is relative to the `src` string (with `@` symbol)
-          key_start: key_start as u32,
-          // offset - key_start = the part of the key in the previous chunk
-          // eq_idx = the part of the key in this chunk
-          key_length: ((offset - key_start) as u32 + eq_idx) as u16,
-          value_length: (semi_idx - (eq_idx + 1)) as u16,
-        });
-      } else {
-        cold_path();
-        // VALUELESS PATH: key; (No equal sign)
-        tags.push(TagPair {
-          key_start: key_start as u32,
-          // offset - key_start = the part of the key in the previous chunk
-          // semi_idx = the part of the key in this chunk
-          key_length: ((offset - key_start) as u32 + semi_idx) as u16,
-          value_length: 0, // Explicitly valueless
-        });
-      }
-
-      // Clear the lowest set bit in the semicolon mask (BLSR instruction or bitwise equivalent)
-      if semi_mask.has_match() {
-        // and account for case when there are no semicolons in the chunk at all
-        semi_mask.clear_to_first();
-      }
-
-      semi_idx + 1
-    }
-  };
-
-  while semi_mask.has_match() {
-    // BLSI (Extract Lowest Set Isolated Bit) or TZCNT (Trailing Zeros)
-    // Find the exact bit position of the first semicolon
-    let semi_idx = semi_mask.first_match();
-
-    // Create a bitmask that isolates everything from our current position up to this semicolon
-    // Example: if chunk_cursor = 2 and semi_idx = 7, mask is 0001111100
-    let bit_window = ((1 << semi_idx) - 1) & !((1 << chunk_cursor) - 1);
-
-    // Is there an equal sign bit inside this exact window?
-    let eq_in_window = eq_mask.window(bit_window);
-
-    // there may be multiple equal signs because values can have it
-    // but we only care for the first one since it's the separator
-    // TODO: this obviously doesn't account for cross chunk state
-    if eq_in_window != 0 {
-      // HAPPY PATH: key=value
-      let eq_idx = eq_in_window.trailing_zeros();
-
-      tags.push(TagPair {
-        key_start: offset as u32 + chunk_cursor,
-        key_length: (eq_idx - chunk_cursor) as u16,
-        value_length: (semi_idx - (eq_idx + 1)) as u16,
-      });
-    } else {
-      cold_path();
-      // VALUELESS PATH: key; (No equal sign bit fell into our window)
-      tags.push(TagPair {
-        key_start: offset as u32 + chunk_cursor,
-        key_length: (semi_idx - chunk_cursor) as u16,
-        value_length: 0, // Explicitly valueless
-      });
-    }
-
-    // Advance our structural cursor past this semicolon
-    chunk_cursor = semi_idx + 1;
-
-    // Clear the lowest set bit in the semicolon mask (BLSR instruction or bitwise equivalent)
-    semi_mask.clear_to_first();
-    // there is no need to mutate the equal mask because we're only interacting with it through the bit window
-  }
-
-  let key_start = offset + chunk_cursor as usize;
-  // the window over leftovers after the last semicolon
-  let bit_window = !((1_u32 << chunk_cursor) - 1);
-  let eq_in_window = eq_mask.window(bit_window);
-  // the state only matters cross chunk so we mutate it once we exit
-  *state = if eq_in_window != 0 {
-    // there is an equal sign in the window, meaning the chunk ends on a value
-    State::Value {
-      key_start,
-      key_length: (eq_in_window.trailing_zeros() - chunk_cursor) as usize,
-    }
-  } else {
-    // there are no equal signs after the latest semicolon
-    // meaning the chunk ends on a key
-    State::Key { key_start }
-  }
 }
 
 #[inline(always)]
@@ -212,8 +77,8 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
         // relative to original `src`
         key_start: key_start as u32,
         key_length: key_length as u16,
-        // starts after `=`, also subtracting the ';' counted in `pos`
-        value_length: (pos - (key_start + key_length + 2)) as u16,
+        // starts after `=`
+        value_length: (pos - (key_start + key_length + 1)) as u16,
       });
 
       semi_mask.clear_to_first();
@@ -223,21 +88,23 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
       if !semi_mask.has_match() && !eq_mask.has_match() {
         // skip to the next chunk if there are no separators at all
         return;
+      } else if !semi_mask.has_match() {
+        // this chunk has an euqal sign but no tag end
+        // meaning we change the state and move next
+        let eq_idx = eq_mask.first_match();
+        let key_length = ((offset - key_start) as u32 + eq_idx) as usize;
+        *state = State::Value { key_start, key_length };
+        return;
       }
-      // if there are no semicolons in the chunk (meaning there are equal signs)
-      // then trailing_zeros returns 32
-      // but we want 0 to get the full chunk bit window
-      // so we are getting the mod
-      let semi_idx = semi_mask.first_match() % 32;
 
-      // !((1 << 0) - 1) == !0 == 0xF...F
-      let bit_window = (1 << semi_idx) - 1;
+      // use leading_window to cover from the start of the chunk up to the first semicolon
+      // (or the entire chunk if there are no semicolons)
+      let eq_in_window = eq_mask.window(semi_mask.leading_window());
+      let semi_idx = semi_mask.first_match();
 
-      let eq_in_window = eq_mask.window(bit_window);
-
-      if eq_in_window != 0 {
+      if eq_in_window.has_match() {
         // HAPPY PATH: key=value
-        let eq_idx = eq_in_window.trailing_zeros();
+        let eq_idx = eq_in_window.first_match();
 
         tags.push(TagPair {
           // `State`'s `key_start`s are relative to the tags string (stripped `@` symbol)
@@ -264,30 +131,30 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
       if semi_mask.has_match() {
         // and account for case when there are no semicolons in the chunk at all
         semi_mask.clear_to_first();
+        semi_idx + 1
+      } else {
+        0
       }
-
-      semi_idx + 1
     }
   };
+  // dbg!(semi_mask);
 
   while semi_mask.has_match() {
-    // BLSI (Extract Lowest Set Isolated Bit) or TZCNT (Trailing Zeros)
     // Find the exact bit position of the first semicolon
     let semi_idx = semi_mask.first_match();
 
     // Create a bitmask that isolates everything from our current position up to this semicolon
     // Example: if chunk_cursor = 2 and semi_idx = 7, mask is 0001111100
-    let bit_window = ((1 << semi_idx) - 1) & !((1 << chunk_cursor) - 1);
+    let bit_window = Mask::between_window(chunk_cursor, semi_idx);
 
     // Is there an equal sign bit inside this exact window?
     let eq_in_window = eq_mask.window(bit_window);
 
     // there may be multiple equal signs because values can have it
     // but we only care for the first one since it's the separator
-    // TODO: this obviously doesn't account for cross chunk state
-    if eq_in_window != 0 {
+    if eq_in_window.has_match() {
       // HAPPY PATH: key=value
-      let eq_idx = eq_in_window.trailing_zeros();
+      let eq_idx = eq_in_window.first_match();
 
       tags.push(TagPair {
         key_start: offset as u32 + chunk_cursor,
@@ -314,17 +181,16 @@ fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128,
 
   let key_start = offset + chunk_cursor as usize;
   // the window over leftovers after the last semicolon
-  let bit_window = !((1_u32 << chunk_cursor) - 1);
+  let bit_window = Mask::trailing_window(chunk_cursor);
   let eq_in_window = eq_mask.window(bit_window);
-  /* if offset != 1 {
-    panic!("{:032b}\n{:032b}\n{:032b}", bit_window, eq_mask.window(u32::MAX), eq_in_window);
-  } */
+
   // the state only matters cross chunk so we mutate it once we exit
-  *state = if eq_in_window != 0 {
+  *state = if eq_in_window.has_match() {
     // there is an equal sign in the window, meaning the chunk ends on a value
+    // panic!("{offset} {chunk_cursor}\n{eq_mask:?}\n{bit_window:?}\n{eq_in_window:?}");
     State::Value {
       key_start,
-      key_length: (eq_in_window.trailing_zeros() - chunk_cursor) as usize,
+      key_length: (eq_in_window.first_match() - chunk_cursor) as usize,
     }
   } else {
     // there are no equal signs after the latest semicolon

@@ -6,12 +6,10 @@ cfg_if::cfg_if! {
     } else */
     if #[cfg(target_feature = "avx2")] {
         mod avx2;
-        pub(crate) use avx2::Vector;
-        pub(super) use avx2::Mask;
+        pub(crate) use avx2::{Mask, Vector};
     } else if #[cfg(target_feature = "sse2")] {
         mod sse2;
-        pub(crate) use sse2::Vector;
-        pub(super) use sse2::Mask;
+        pub(crate) use sse2::{Mask, Vector};
     } else {
         compile_error!(
             "enable the `sse2`/`avx2` target features using `target-cpu=native`, or disable the `simd` feature"
