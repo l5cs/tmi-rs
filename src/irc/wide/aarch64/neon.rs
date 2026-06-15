@@ -215,4 +215,10 @@ mod tests {
     mask.clear_to_first();
     assert_eq!(mask.0, 0b00000000_11110000_11110000_00000000);
   }
+
+  #[test]
+  fn test_between_window() {
+    let mut mask = Mask::between_window(1, 3);
+    assert_eq!(mask.0, 0b00001111_11110000);
+  }
 }

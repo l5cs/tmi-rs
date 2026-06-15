@@ -71,7 +71,7 @@ impl Vector {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct Mask(pub(in crate::irc::wide) u32);
+pub struct Mask(pub(super) u32);
 
 #[cfg(debug_assertions)]
 impl core::fmt::Debug for Mask {
