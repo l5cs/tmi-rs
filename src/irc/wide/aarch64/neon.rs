@@ -140,7 +140,7 @@ impl Mask {
   /// ```
   #[inline(always)]
   pub fn clear_to_first(&mut self) {
-    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - (self.first_match() + 3)));
+    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - ((self.first_match() << 2) + 3)));
   }
 
   /// intersect this mask with `window`, returning a new mask
@@ -181,7 +181,9 @@ impl Mask {
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
     let bit_pos = from << 2;
-    Self(!((1_u64.wrapping_shl(bit_pos)).wrapping_sub(1)))
+    // using a larger integer in the case that `from` is 32
+    // then the 1_u128 << from -> truncating to 0
+    Self(!(1_u128.checked_shl(bit_pos).unwrap_or_default().wrapping_sub(1)) as u64)
   }
 
   /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices
@@ -195,13 +197,12 @@ impl Mask {
   /// ```
   #[inline(always)]
   pub fn between_window(from: u32, to: u32) -> Self {
-    // TODO: i have no clue whether this works correctly at all
     let from_bit = from << 2;
     let to_bit = to << 2;
-    Self(
-      ((1_u64.wrapping_shl(to_bit)).wrapping_sub(1))
-        & !((1_u64.wrapping_shl(from_bit)).wrapping_sub(1)),
-    )
+    // using a larger integer in the case that `from` is 32
+    let until = 1_u128.checked_shl(to_bit).unwrap_or_default().wrapping_sub(1);
+    let since = !(1_u128.checked_shl(from_bit).unwrap_or_default().wrapping_sub(1));
+    Self((until & since) as u64)
   }
 }
 
@@ -217,8 +218,28 @@ mod tests {
   }
 
   #[test]
+  fn test_trailing_window() {
+    let mask = Mask::trailing_window(2);
+    assert_eq!(mask.0, 0xffff_ffff_ffff_ff00);
+
+
+    let max_zeros = 0_u64.trailing_zeros(); // = 64
+    let mask = Mask::trailing_window(max_zeros);
+    // should be zeroed since there are no bits after 64th position in a 64 bit vector
+    assert_eq!(mask.0, 0);
+  }
+
+  #[test]
   fn test_between_window() {
-    let mask = Mask::between_window(1, 3);
-    assert_eq!(mask.0, 0b00001111_11110000);
+    let mask = Mask::between_window(2, 7);
+    assert_eq!(mask.0, 0x0fff_ff00);
+
+    // full window
+    let mask = Mask::between_window(0, 64);
+    assert_eq!(mask.0, !0);
+
+    // zero length window
+    let mask = Mask::between_window(1, 1);
+    assert_eq!(mask.0, 0);
   }
 }

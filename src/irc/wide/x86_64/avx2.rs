@@ -151,7 +151,7 @@ impl Mask {
   pub fn trailing_window(from: u32) -> Self {
     // using a larger integer in the case that `from` is 32
     // then the 1_u64 << from = 0x1_0000_0000 -> truncating to 0
-    Self(!((1_u64.wrapping_shl(from)).wrapping_sub(1)) as u32)
+    Self(!(1_u64.wrapping_shl(from).wrapping_sub(1)) as u32)
   }
 
   /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive)
@@ -165,8 +165,8 @@ impl Mask {
   pub fn between_window(from: u32, to: u32) -> Self {
     // using a larger integer in the case that `to` is 32
     // then `since` = 0x1_0000_0000 -> truncating to 0
-    let until = (1_u64.wrapping_shl(to)).wrapping_sub(1);
-    let since = !((1_u64.wrapping_shl(from)).wrapping_sub(1));
+    let until = 1_u64.wrapping_shl(to).wrapping_sub(1);
+    let since = !(1_u64.wrapping_shl(from).wrapping_sub(1));
     Self((until & since) as u32)
   }
 }
