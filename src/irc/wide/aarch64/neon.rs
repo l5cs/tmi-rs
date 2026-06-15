@@ -181,7 +181,7 @@ impl Mask {
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
     let bit_pos = from << 2;
-    Self(!((1_u64.wrapping_shl(bit_pos as u64)).wrapping_sub(1)))
+    Self(!((1_u64.wrapping_shl(bit_pos)).wrapping_sub(1)))
   }
 
   /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices
@@ -199,8 +199,8 @@ impl Mask {
     let from_bit = from << 2;
     let to_bit = to << 2;
     Self(
-      ((1_u64.wrapping_shl(to_bit as u64)).wrapping_sub(1))
-        & !((1_u64.wrapping_shl(from_bit as u64)).wrapping_sub(1)),
+      ((1_u64.wrapping_shl(to_bit)).wrapping_sub(1))
+        & !((1_u64.wrapping_shl(from_bit)).wrapping_sub(1)),
     )
   }
 }
@@ -218,7 +218,7 @@ mod tests {
 
   #[test]
   fn test_between_window() {
-    let mut mask = Mask::between_window(1, 3);
+    let mask = Mask::between_window(1, 3);
     assert_eq!(mask.0, 0b00001111_11110000);
   }
 }
