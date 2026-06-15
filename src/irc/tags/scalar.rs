@@ -19,25 +19,43 @@ pub(crate) fn parse(src: &str, pos: &mut usize) -> Option<RawTags> {
         }
       }
       b';' => {
-        if let State::Value { key_start, key_end } = state {
-          tags.push(TagPair {
-            key_start: key_start as u32 + 1,
-            key_end: (key_end - key_start) as u16,
-            value_end: (offset - (key_end + 1)) as u16,
-          });
-          state = State::Key {
-            key_start: offset + 1,
-          };
-        }
+        tags.push(match state {
+          State::Value { key_start, key_end } => {
+            TagPair {
+              key_start: key_start as u32 + 1,
+              key_length: (key_end - key_start) as u16,
+              value_length: (offset - (key_end + 1)) as u16,
+            }
+          }
+          State::Key { key_start } => {
+            TagPair {
+              key_start: key_start as u32 + 1,
+              key_length: (offset - key_start) as u16,
+              value_length: 0,
+            }
+          }
+        });
+        state = State::Key {
+          key_start: offset + 1,
+        };
       }
       b' ' => {
-        if let State::Value { key_start, key_end } = state {
-          tags.push(TagPair {
-            key_start: key_start as u32 + 1,
-            key_end: (key_end - key_start) as u16,
-            value_end: (offset - (key_end + 1)) as u16,
-          });
-        }
+        tags.push(match state {
+          State::Value { key_start, key_end } => {
+            TagPair {
+              key_start: key_start as u32 + 1,
+              key_length: (key_end - key_start) as u16,
+              value_length: (offset - (key_end + 1)) as u16,
+            }
+          }
+          State::Key { key_start } => {
+            TagPair {
+              key_start: key_start as u32 + 1,
+              key_length: (offset - key_start) as u16,
+              value_length: 0,
+            }
+          }
+        });
         break;
       }
       _ => {}
