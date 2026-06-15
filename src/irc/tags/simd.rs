@@ -4,19 +4,19 @@ use super::*;
 use crate::irc::wide::{Mask, Vector as V};
 
 /// a walkthrough the parsing logic with bit arithmetic
-/// 
+///
 /// ```text
-/// src                         @a=b;c=d;user-type= 
+/// src                         @a=b;c=d;user-type=
 /// src[1..1+8] 8 bytes chunk    ^       ^
 /// chunk_cursor = 0
 /// offset = 1 = '@'.len()
-/// Vector::SIZE = 8 
+/// Vector::SIZE = 8
 /// chunk                        a=b;c=d;
-/// 
+///
 /// chunk 1 iteration 1
 /// reversed                     ;d=c;b=a
 /// vector_semi                  10001000
-/// vector_eq                    00100010 
+/// vector_eq                    00100010
 /// semi_idx = 3                     ^~~~
 /// bit_window                   00001111
 ///                        semi_idx 3....0 chunk_cursor
@@ -29,7 +29,7 @@ use crate::irc::wide::{Mask, Vector as V};
 /// }
 /// chunk_cursor = 4 = semi_idx (= 3) + ';'.len() (= 1)
 /// vector_semi.clear_to_first() 10000000
-/// 
+///
 /// chunk 1 iteration 2
 /// vector_semi                  10000000
 /// semi_idx = 7                 ^~~~~~~~
@@ -44,21 +44,21 @@ use crate::irc::wide::{Mask, Vector as V};
 /// }
 /// chunk_cursor = 8 = semi_idx (= 7) + ';'.len() (= 1)
 /// vector_semi.clear_to_first() 00000000
-/// 
+///
 /// chunk 2 iteration 1
 /// offset = 9 = V::SIZE (= 8) * 1 + 1
 /// chunk_cursor = 0
-/// src                         @a=b;c=d;user-type= 
+/// src                         @a=b;c=d;user-type=
 /// chunk                                user-typ
 /// vector_semi                          00000000
 /// state = State::Key {
 ///   key_start: offset (= 9) + chunk_cursor (= 0),
 /// }
-/// 
+///
 /// chunk 3 iteration 1
 /// offset = 17 = 8 * 2 + 1
 /// chunk_cursor = 0
-/// src                         @a=b;c=d;user-type= 
+/// src                         @a=b;c=d;user-type=
 /// chunk                                        e=
 /// vector_semi                                  00000000
 /// vector_eq                                    01000000

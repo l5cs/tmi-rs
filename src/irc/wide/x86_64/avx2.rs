@@ -149,7 +149,9 @@ impl Mask {
   /// ```
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
-    Self(!((1_u32.wrapping_shl(from)).wrapping_sub(1)))
+    // using a larger integer in the case that `from` is 32
+    // then the 1_u64 << from = 0x1_0000_0000 -> truncating to 0
+    Self(!((1_u64.wrapping_shl(from)).wrapping_sub(1)) as u32)
   }
 
   /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive)
@@ -161,6 +163,34 @@ impl Mask {
   /// ```
   #[inline(always)]
   pub fn between_window(from: u32, to: u32) -> Self {
-    Self(((1_u32.wrapping_shl(to)).wrapping_sub(1)) & !((1_u32.wrapping_shl(from)).wrapping_sub(1)))
+    // using a larger integer in the case that `to` is 32
+    // then `since` = 0x1_0000_0000 -> truncating to 0
+    let until = (1_u64.wrapping_shl(to)).wrapping_sub(1);
+    let since = !((1_u64.wrapping_shl(from)).wrapping_sub(1));
+    Self((until & since) as u32)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_trailing_window() {
+    let max_zeros = 0_u32.trailing_zeros(); // = 32
+    let mask = Mask::trailing_window(max_zeros);
+    // should be zeroed since there are no bits after 32nd position in a 32 bit vector
+    assert_eq!(mask.0, 0);
+  }
+
+  #[test]
+  fn test_between_window() {
+    // full window
+    let mask = Mask::between_window(0, 32);
+    assert_eq!(mask.0, !0);
+
+    // zero length window
+    let mask = Mask::between_window(1, 1);
+    assert_eq!(mask.0, 0);
   }
 }
