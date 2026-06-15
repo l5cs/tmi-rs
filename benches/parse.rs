@@ -4,7 +4,6 @@ use std::time::Duration;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mimalloc::MiMalloc;
 use tmi::IrcMessageRef;
-use tmi_orig::IrcMessageRef as OrigMsgRef;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -29,11 +28,6 @@ fn twitch(c: &mut Criterion) {
         black_box(IrcMessageRef::parse(line).expect("failed to parse"));
       });
     });
-    c.bench_with_input(BenchmarkId::new("twitch orig", name), &line, |b, line| {
-      b.iter(|| {
-        black_box(OrigMsgRef::parse(line).expect("failed to parse"));
-      });
-    });
   };
 
   bench("long", long_line);
@@ -49,17 +43,6 @@ fn twitch(c: &mut Criterion) {
       }
     });
   });
-  c.bench_with_input(
-    BenchmarkId::new("twitch orig", "1000"),
-    &lines,
-    |b, lines| {
-      b.iter(|| {
-        for line in lines {
-          black_box(OrigMsgRef::parse(line).expect("failed to parse"));
-        }
-      });
-    },
-  );
 }
 
 criterion_group!(
