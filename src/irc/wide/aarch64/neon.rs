@@ -124,21 +124,32 @@ impl Mask {
     self.0 != 0
   }
 
-  /// Returns the character index of the first match.
+  /// return the position of the first match in the chunk
   ///
-  /// NEON packs 4 bits per character, so we divide by 4.
+  /// neon packs 4 bits per character, so we divide by 4
   #[inline(always)]
   pub fn first_match(&self) -> u32 {
     (self.0.trailing_zeros() >> 2) as u32
   }
 
-  /// Clear the lowest set bit (BLSR).
+  /// clear the first match
+  ///
+  /// ```text
+  /// 11110000_11110000 - input
+  /// 11110000_00000000 - output
+  /// ```
   #[inline(always)]
   pub fn clear_to_first(&mut self) {
-    self.0 &= self.0 - 1;
+    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - (self.first_match() + 3)));
   }
 
   /// intersect this mask with `window`, returning a new mask
+  ///
+  /// ```text
+  /// 11110000_11110000 - mask
+  /// 00001111_11110000 - window
+  /// 00000000_11110000 - output
+  /// ```
   #[inline(always)]
   pub fn window(&self, window: Self) -> Self {
     Self(self.0 & window.0)
@@ -146,7 +157,13 @@ impl Mask {
 
   /// get the bit window from the start of the chunk up to the first match
   ///
-  /// handles the empty mask case by returning all-ones (the full chunk window).
+  /// ```text
+  ///    b   ;    =   a
+  /// 00001111_00000000 - input - the first match is on character index 3
+  /// 00000001_11111111 - output - window covers up to the first semicolon
+  /// ```
+  ///
+  /// handles the empty mask case by returning all-ones (the full chunk window)
   #[inline(always)]
   pub fn leading_window(&self) -> Self {
     let lsb = self.0 & self.0.wrapping_neg();
@@ -155,23 +172,47 @@ impl Mask {
 
   /// create the bit window from a character index to the end of the mask
   ///
-  /// `from` is a character index; NEON encodes 4 bits per character.
+  /// `from` is a character index; neon encodes 4 bits per character
+  ///
+  /// ```text
+  ///      1 (* 4) ~~~~ - position
+  /// 11111111_11110000 - output
+  /// ```
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
     let bit_pos = from << 2;
     Self(!((1_u64.wrapping_shl(bit_pos as u64)).wrapping_sub(1)))
   }
 
-  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices.
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices
   ///
-  /// NEON encodes 4 bits per character, so character indices are multiplied by 4.
+  /// neon encodes 4 bits per character, so character indices are multiplied by 4
+  ///
+  /// ```text
+  /// 11110000_11110000 - from 1 to 3
+  ///    ^        ^  
+  /// 00001111_11110000 - output
+  /// ```
   #[inline(always)]
   pub fn between_window(from: u32, to: u32) -> Self {
+    // TODO: i have no clue whether this works correctly at all
     let from_bit = from << 2;
     let to_bit = to << 2;
     Self(
       ((1_u64.wrapping_shl(to_bit as u64)).wrapping_sub(1))
         & !((1_u64.wrapping_shl(from_bit as u64)).wrapping_sub(1)),
     )
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_clear_to_first() {
+    let mut mask = Mask(0b00000000_11110000_11111111_00000000);
+    mask.clear_to_first();
+    assert_eq!(mask.0, 0b00000000_11110000_11110000_00000000);
   }
 }

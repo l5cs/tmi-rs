@@ -74,6 +74,7 @@ impl Vector {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
+// pub(in crate) just for the tests in wide.rs
 pub struct Mask(pub(in crate::irc::wide) u32);
 
 #[cfg(debug_assertions)]
@@ -89,17 +90,31 @@ impl Mask {
     self.0 != 0
   }
 
+  /// return the position of the first match in the chunk
   #[inline(always)]
   pub fn first_match(&self) -> u32 {
     self.0.trailing_zeros()
   }
 
+  /// clear the first match
+  ///
+  /// ```text
+  /// 10101010 - input
+  /// 10101001 - (input - 1)
+  /// 10101000 - output
+  /// ```
   #[inline(always)]
   pub fn clear_to_first(&mut self) {
     self.0 &= self.0 - 1;
   }
 
   /// intersect this mask with `window`, returning a new mask
+  ///
+  /// ```text
+  /// 01010101 - mask
+  /// 00011110 - window
+  /// 00010100 - output
+  /// ```
   #[inline(always)]
   pub fn window(&self, window: Self) -> Self {
     Self(self.0 & window.0)
@@ -113,8 +128,8 @@ impl Mask {
   /// 00001111 - output - window covers up to the first semicolon
   /// ```
   ///
-  /// handles the empty mask case by returning all-ones (the full chunk window).
-  /// 
+  /// handles the empty mask case by returning all-ones (the full chunk window)
+  ///
   /// ```text
   /// yek-gnol
   /// 00000000 - input
@@ -127,17 +142,25 @@ impl Mask {
   }
 
   /// create the bit window from a position in a mask to the end of the mask
+  ///
+  /// ```text
+  ///  5 ~~~~~ - position
+  /// 11100000 - output
+  /// ```
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
     Self(!((1_u32.wrapping_shl(from)).wrapping_sub(1)))
   }
 
-  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive).
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive)
+  ///
+  /// ```text
+  /// 01010101 - from 1 to 5
+  ///   ^   ^
+  /// 00011110 - output
+  /// ```
   #[inline(always)]
   pub fn between_window(from: u32, to: u32) -> Self {
-    Self(
-      ((1_u32.wrapping_shl(to)).wrapping_sub(1))
-        & !((1_u32.wrapping_shl(from)).wrapping_sub(1)),
-    )
+    Self(((1_u32.wrapping_shl(to)).wrapping_sub(1)) & !((1_u32.wrapping_shl(from)).wrapping_sub(1)))
   }
 }

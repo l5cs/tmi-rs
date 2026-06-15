@@ -48,13 +48,17 @@ fn twitch(c: &mut Criterion) {
       }
     });
   });
-  c.bench_with_input(BenchmarkId::new("twitch orig", "1000"), &lines, |b, lines| {
-    b.iter(|| {
-      for line in lines {
-        black_box(OrigMsgRef::parse(line).expect("failed to parse"));
-      }
-    });
-  });
+  c.bench_with_input(
+    BenchmarkId::new("twitch orig", "1000"),
+    &lines,
+    |b, lines| {
+      b.iter(|| {
+        for line in lines {
+          black_box(OrigMsgRef::parse(line).expect("failed to parse"));
+        }
+      });
+    },
+  );
 }
 
 criterion_group!(benches, twitch);

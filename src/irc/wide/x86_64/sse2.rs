@@ -91,12 +91,25 @@ impl Mask {
     self.0.trailing_zeros()
   }
 
+  /// clear the first match
+  ///
+  /// ```text
+  /// 10101010 - input
+  /// 10101001 - (input - 1)
+  /// 10101000 - output
+  /// ```
   #[inline(always)]
   pub fn clear_to_first(&mut self) {
     self.0 &= self.0 - 1;
   }
 
   /// intersect this mask with `window`, returning a new mask
+  ///
+  /// ```text
+  /// 01010101 - mask
+  /// 00011110 - window
+  /// 00010100 - output
+  /// ```
   #[inline(always)]
   pub fn window(&self, window: Self) -> Self {
     Self(self.0 & window.0)
@@ -104,7 +117,19 @@ impl Mask {
 
   /// get the bit window from the start of the chunk up to the first match
   ///
-  /// handles the empty mask case by returning all-ones (the full chunk window).
+  /// ```text
+  /// d;=c;b=a
+  /// 01001000 - input - the first match is on character index 3
+  /// 00001111 - output - window covers up to the first semicolon
+  /// ```
+  ///
+  /// handles the empty mask case by returning all-ones (the full chunk window)
+  ///
+  /// ```text
+  /// yek-gnol
+  /// 00000000 - input
+  /// 11111111 - output - window covers everything
+  /// ```
   #[inline(always)]
   pub fn leading_window(&self) -> Self {
     let lsb = self.0 & self.0.wrapping_neg();
@@ -112,17 +137,25 @@ impl Mask {
   }
 
   /// create the bit window from a position in a mask to the end of the mask
+  ///
+  /// ```text
+  ///  5 ~~~~~ - position
+  /// 11100000 - output
+  /// ```
   #[inline(always)]
   pub fn trailing_window(from: u32) -> Self {
     Self(!((1_u32.wrapping_shl(from)).wrapping_sub(1)))
   }
 
-  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive).
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive)
+  ///
+  /// ```text
+  /// 01010101 - from 1 to 5
+  ///   ^   ^
+  /// 00011110 - output
+  /// ```
   #[inline(always)]
   pub fn between_window(from: u32, to: u32) -> Self {
-    Self(
-      ((1_u32.wrapping_shl(to)).wrapping_sub(1))
-        & !((1_u32.wrapping_shl(from)).wrapping_sub(1)),
-    )
+    Self(((1_u32.wrapping_shl(to)).wrapping_sub(1)) & !((1_u32.wrapping_shl(from)).wrapping_sub(1)))
   }
 }

@@ -41,11 +41,11 @@ mod tests {
 
   #[test]
   fn test_leading_window() {
-    // simple: first match at bit 1 -> covers bits 0-1
+    // first match at bit 1 -> covers bits 0-1
     let mask = Mask(0b00000010);
     assert_eq!(mask.leading_window().0, 0b00000011);
 
-    // complex: matches after the first, window only up to the first
+    // matches after the first, window only up to the first
     // bits set at positions 5 and 2 -> first at 2 -> window covers 0-2
     let mask = Mask(0b00100100);
     assert_eq!(mask.leading_window().0, 0b00000111);
@@ -57,7 +57,6 @@ mod tests {
 
   #[test]
   fn test_trailing_window() {
-    // from cursor = 2: window covers bits 2 to MSB
     let window = Mask::trailing_window(2);
     assert_eq!(window.0, !0b00000011);
   }

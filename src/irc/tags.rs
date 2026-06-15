@@ -223,13 +223,13 @@ impl IntoIterator for RawTags {
 #[derive(Default, Clone, Copy)]
 pub(super) struct TagPair {
   /// index of the key start relative to the raw irc string
-  /// 
+  ///
   /// ```text
   /// @key=value
   ///  ^
   /// key_start = 1
   /// ```
-  /// 
+  ///
   /// ```text
   /// @a=b;key=value
   ///      ^
@@ -237,13 +237,13 @@ pub(super) struct TagPair {
   /// ```
   key_start: u32,
   /// length of the key string from `key_start`
-  /// 
+  ///
   /// ```text
   /// @key=value
   ///     ^
   /// key_length = 3
   /// ```
-  /// 
+  ///
   /// ```text
   /// @a=b;key=value
   ///         ^
@@ -251,25 +251,18 @@ pub(super) struct TagPair {
   /// ```
   key_length: u16,
   /// length of the value string from `key_start + key_length + '='.len()`
-  /// 
+  ///
   /// ```text
   /// @key=value
   ///           ^
   /// value_length = 5
   /// ```
-  /// 
+  ///
   /// ```text
   /// @a=b;key=value
   ///               ^
   /// value_length = 5
   /// ```
-  //
-  // this does theoretically mean that if the last tag pair has an empty value
-  // (no equal sign) then the span would take a slice outside the tag string
-  // but since we're slicing over the whole `src` string it's ok since there's the
-  // " " after and the value is an empty string anyway
-  // @key :justinfan
-  //      ^
   value_length: u16,
 }
 
@@ -279,7 +272,7 @@ impl TagPair {
   ///  ^  ^
   /// Span { start: 1, end: 4 }
   /// ```
-  /// 
+  ///
   /// ```text
   /// @a=b;key=value
   ///      ^  ^
@@ -297,7 +290,7 @@ impl TagPair {
   ///      ^    ^
   /// Span { start: 5, end: 10 }
   /// ```
-  /// 
+  ///
   /// ```text
   /// @a=b;key=value
   ///          ^    ^
@@ -305,6 +298,7 @@ impl TagPair {
   /// ```
   #[inline]
   pub fn value(&self) -> Span {
+    // we always assume the equal sign because the value is an empty string either way
     let start = self.key_start + self.key_length as u32 + 1;
     let end = start + self.value_length as u32;
     Span { start, end }

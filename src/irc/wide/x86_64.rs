@@ -1,4 +1,5 @@
 cfg_if::cfg_if! {
+    // TODO: avx512 is now stable so it should be ok to enable it
     /* if #[cfg(all(target_feature = "avx512f", target_feature = "avx512bw"))] {
         mod avx512;
         pub(crate) use avx512::Vector;
