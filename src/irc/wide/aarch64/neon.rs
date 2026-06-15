@@ -183,7 +183,12 @@ impl Mask {
     let bit_pos = from << 2;
     // using a larger integer in the case that `from` is 32
     // then the 1_u128 << from -> truncating to 0
-    Self(!(1_u128.checked_shl(bit_pos).unwrap_or_default().wrapping_sub(1)) as u64)
+    Self(
+      !(1_u128
+        .checked_shl(bit_pos)
+        .unwrap_or_default()
+        .wrapping_sub(1)) as u64,
+    )
   }
 
   /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices
@@ -200,8 +205,14 @@ impl Mask {
     let from_bit = from << 2;
     let to_bit = to << 2;
     // using a larger integer in the case that `from` is 32
-    let until = 1_u128.checked_shl(to_bit).unwrap_or_default().wrapping_sub(1);
-    let since = !(1_u128.checked_shl(from_bit).unwrap_or_default().wrapping_sub(1));
+    let until = 1_u128
+      .checked_shl(to_bit)
+      .unwrap_or_default()
+      .wrapping_sub(1);
+    let since = !(1_u128
+      .checked_shl(from_bit)
+      .unwrap_or_default()
+      .wrapping_sub(1));
     Self((until & since) as u64)
   }
 }
@@ -221,7 +232,6 @@ mod tests {
   fn test_trailing_window() {
     let mask = Mask::trailing_window(2);
     assert_eq!(mask.0, 0xffff_ffff_ffff_ff00);
-
 
     let max_zeros = 0_u64.trailing_zeros(); // = 64
     let mask = Mask::trailing_window(max_zeros);
