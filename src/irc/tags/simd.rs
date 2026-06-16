@@ -1,39 +1,118 @@
-use super::*;
-use crate::irc::wide::Vector as V;
+use std::hint::cold_path;
 
+use super::*;
+use crate::irc::wide::{Mask, Vector as V};
+
+/// a walkthrough the parsing logic with bit arithmetic
+///
+/// ```text
+/// src                         @a=b;c=d;user-type=
+/// src[1..1+8] 8 bytes chunk    ^       ^
+/// chunk_cursor = 0
+/// offset = 1 = '@'.len()
+/// Vector::SIZE = 8
+/// chunk                        a=b;c=d;
+///
+/// chunk 1 iteration 1
+/// reversed                     ;d=c;b=a
+/// vector_semi                  10001000
+/// vector_eq                    00100010
+/// semi_idx = 3                     ^~~~
+/// bit_window                   00001111
+///                        semi_idx 3....0 chunk_cursor
+/// eq_in_window                 00000010
+/// eq_idx = 1                         ^~
+/// TagPair {
+///   key_start: 1 = offset (= 1) + chunk_cursor (= 0),
+///   key_length: 1 = eq_idx - chunk_cursor (= 0),
+///   value_length: 1 = semi_idx (= 3) - eq_idx (= 1) - '='.len() (= 1),
+/// }
+/// chunk_cursor = 4 = semi_idx (= 3) + ';'.len() (= 1)
+/// vector_semi.clear_to_first() 10000000
+///
+/// chunk 1 iteration 2
+/// vector_semi                  10000000
+/// semi_idx = 7                 ^~~~~~~~
+/// bit_window                   11110000
+///                    semi_idx 7....4 chunk_cursor
+/// eq_in_window                 00100000
+/// eq_idx = 5                     ^~~~~~
+/// TagPair {
+///   key_start: 5 = offset (= 1) + chunk_cursor (= 4),
+///   key_length: 1 = eq_idx - chunk_cursor (= 4),
+///   value_length: 1 = semi_idx (= 7) - eq_idx (= 5) - '='.len() (= 1),
+/// }
+/// chunk_cursor = 8 = semi_idx (= 7) + ';'.len() (= 1)
+/// vector_semi.clear_to_first() 00000000
+///
+/// chunk 2 iteration 1
+/// offset = 9 = V::SIZE (= 8) * 1 + 1
+/// chunk_cursor = 0
+/// src                         @a=b;c=d;user-type=
+/// chunk                                user-typ
+/// vector_semi                          00000000
+/// state = State::Key {
+///   key_start: offset (= 9) + chunk_cursor (= 0),
+/// }
+///
+/// chunk 3 iteration 1
+/// offset = 17 = 8 * 2 + 1
+/// chunk_cursor = 0
+/// src                         @a=b;c=d;user-type=
+/// chunk                                        e=
+/// vector_semi                                  00000000
+/// vector_eq                                    01000000
+/// eq_idx                                        ^
+/// TagPair {
+///   key_start: 9 = state.key_start,
+///   // key_length = prev_chunk_length + curr_chunk_length = "user-typ" + "e"
+///   // prev_chunk_length = start of current chunk (= 17) - key_start (= 9)
+///   // curr_chunk_length = eq_idx (= 1) - chunk_cursor (= 0)
+///   key_length: 9 = (offset - key_start) + (eq_idx - chunk_cursor),
+///   value_length: 0,
+/// }
+/// ```
 pub(crate) fn parse(src: &str, pos: &mut usize) -> Option<RawTags> {
+  const LEADING_AT_LEN: usize = 1;
+
   let src = src[*pos..].strip_prefix('@')?.as_bytes();
 
   // 1. scan for ASCII space to find tags end
   let end = find_first(src, b' ')?;
-  *pos += end + 2; // skip '@' + space
+  *pos += end + LEADING_AT_LEN + 1; // skip '@' + space
 
   let remainder = &src[..end];
   let mut tags = Array::<128, TagPair>::new();
   let mut offset = 0;
 
-  let mut state = State::Key { key_start: 0 };
+  let mut state = State::Key {
+    key_start: LEADING_AT_LEN,
+  };
   while offset + V::SIZE < remainder.len() {
     let chunk = V::load_unaligned(remainder, offset);
-    parse_chunk(offset, chunk, &mut state, &mut tags);
+    // including the @ symbol in offset
+    let src_offset = offset + LEADING_AT_LEN;
+    parse_chunk(src_offset, chunk, &mut state, &mut tags);
     offset += V::SIZE;
   }
 
   if remainder.len() - offset > 0 {
     let chunk = V::load_unaligned_remainder(remainder, offset);
-    parse_chunk(offset, chunk, &mut state, &mut tags);
+    let src_offset = offset + LEADING_AT_LEN;
+    parse_chunk(src_offset, chunk, &mut state, &mut tags);
 
-    if let State::Value { key_start, key_end } = state {
+    if let State::Value {
+      key_start,
+      key_length,
+    } = state
+    {
       // value contains whatever is left after key_end
-
       let pos = remainder.len(); // pos of `;`
-
       tags.push(TagPair {
         // relative to original `src`
-        key_start: key_start as u32 + 1,
-        key_end: (key_end - key_start) as u16,
-        // starts after `=`
-        value_end: (pos - (key_end + 1)) as u16,
+        key_start: key_start as u32,
+        key_length: key_length as u16,
+        value_length: (pos - key_start - key_length) as u16,
       });
     }
   }
@@ -43,55 +122,164 @@ pub(crate) fn parse(src: &str, pos: &mut usize) -> Option<RawTags> {
 
 #[derive(Clone, Copy)]
 enum State {
-  Key { key_start: usize },
-  Value { key_start: usize, key_end: usize },
+  Key {
+    /// relative to the original `src` string, equivalent to `TagPair::key_start`
+    key_start: usize,
+  },
+  Value {
+    /// relative to the original `src` string, equivalent to `TagPair::key_start`
+    key_start: usize,
+    key_length: usize,
+  },
 }
 
 #[inline(always)]
 fn parse_chunk(offset: usize, chunk: V, state: &mut State, tags: &mut Array<128, TagPair>) {
-  let mut vector_eq = chunk.eq(b'=').movemask();
+  let vector_eq = chunk.eq(b'=').movemask();
   let mut vector_semi = chunk.eq(b';').movemask();
 
-  loop {
-    match *state {
-      State::Key { key_start } => {
-        if !vector_eq.has_match() {
-          break;
-        }
+  // finish the state from previous chunks so that we can start from a new key
+  let mut chunk_cursor = match *state {
+    State::Value {
+      key_start,
+      key_length,
+    } => {
+      if !vector_semi.has_match() {
+        // skip to the next chunk if previous chunk's value doesn't end in this chunk
+        return;
+      }
+      let semi_idx = vector_semi.first_match();
+      let pos = offset + semi_idx as usize;
+      *state = State::Key { key_start: pos };
+      tags.push(TagPair {
+        key_start: key_start as u32,
+        key_length: key_length as u16,
+        // starts after `=`
+        value_length: (pos - (key_start + key_length + 1)) as u16,
+      });
 
-        let m = vector_eq.first_match();
-        vector_eq.clear_to(m);
-        vector_semi.clear_to(m);
-
-        let pos = offset + m.as_index(); // pos of `=`
-
+      vector_semi.clear_to_first();
+      semi_idx + 1
+    }
+    State::Key { key_start } => {
+      if !vector_semi.has_match() && !vector_eq.has_match() {
+        // skip to the next chunk if there are no separators at all
+        return;
+      } else if !vector_semi.has_match() {
+        // this chunk has an equal sign but no tag end
+        // meaning we change the state and move to the next
+        let eq_idx = vector_eq.first_match();
+        let key_length = ((offset - key_start) as u32 + eq_idx) as usize;
         *state = State::Value {
           key_start,
-          key_end: pos,
+          key_length,
         };
+        return;
       }
-      State::Value { key_start, key_end } => {
-        if !vector_semi.has_match() {
-          break;
-        }
 
-        let m = vector_semi.first_match();
-        vector_eq.clear_to(m);
-        vector_semi.clear_to(m);
+      // using leading_window to cover from the start of the chunk up to the first semicolon
+      // (or the entire chunk if there are no semicolons)
+      let eq_in_window = vector_eq.window(vector_semi.leading_window());
+      let semi_idx = vector_semi.first_match();
 
-        let pos = offset + m.as_index(); // pos of `;`
-
-        *state = State::Key { key_start: pos + 1 };
+      if eq_in_window.has_match() {
+        // normal path: key=value; or key=;
+        let eq_idx = eq_in_window.first_match();
 
         tags.push(TagPair {
-          // relative to original `src`
-          key_start: key_start as u32 + 1,
-          key_end: (key_end - key_start) as u16,
-          // starts after `=`
-          value_end: (pos - (key_end + 1)) as u16,
+          key_start: key_start as u32,
+          // offset - key_start = the part of the key in the previous chunk
+          // eq_idx             = the part of the key in this chunk
+          key_length: ((offset - key_start) as u32 + eq_idx) as u16,
+          value_length: (semi_idx - (eq_idx + 1)) as u16,
+        });
+      } else {
+        // empty value: key;
+        // irc spec has empty tag values `key;` and missing tag values `key=;`
+        // https://ircv3.net/specs/extensions/message-tags
+        //
+        // twitch irc never sends empty tag values, only missing
+        // but someone repackaging twitch messages might
+        cold_path();
+        tags.push(TagPair {
+          key_start: key_start as u32,
+          // offset - key_start = the part of the key in the previous chunk
+          // semi_idx           = the part of the key in this chunk
+          key_length: ((offset - key_start) as u32 + semi_idx) as u16,
+          value_length: 0,
         });
       }
+
+      // clear the semicolon separating this tag pair and move the cursor after it
+      if vector_semi.has_match() {
+        vector_semi.clear_to_first();
+        semi_idx + 1
+      } else {
+        // and account for case when there are no semicolons in the chunk at all
+        0
+      }
     }
+  };
+
+  while vector_semi.has_match() {
+    // find the position of the closest semicolon
+    let semi_idx = vector_semi.first_match();
+
+    // isolate everything from our current position up to this semicolon
+    // e.g. if chunk_cursor = 2 and semi_idx = 7, mask is 01111100
+    let bit_window = Mask::between_window(chunk_cursor, semi_idx);
+
+    // filter equal signs that are in this tag pair window
+    let eq_in_window = vector_eq.window(bit_window);
+
+    // there may be multiple equal signs because values can have it unescaped
+    // but we only care for the first one since it's the separator
+    if eq_in_window.has_match() {
+      // normal path: key=value; or key=;
+      let eq_idx = eq_in_window.first_match();
+
+      tags.push(TagPair {
+        key_start: offset as u32 + chunk_cursor,
+        key_length: (eq_idx - chunk_cursor) as u16,
+        value_length: (semi_idx - (eq_idx + 1)) as u16,
+      });
+    } else {
+      // empty value: key;
+      // irc spec has empty tag values `key;` and missing tag values `key=;`
+      // https://ircv3.net/specs/extensions/message-tags
+      //
+      // twitch irc never sends empty tag values, only missing
+      // but someone repackaging twitch messages might
+      cold_path();
+      tags.push(TagPair {
+        key_start: offset as u32 + chunk_cursor,
+        key_length: (semi_idx - chunk_cursor) as u16,
+        value_length: 0, // Explicitly valueless
+      });
+    }
+
+    // clear the semicolon separating this tag pair and move the cursor after it
+    vector_semi.clear_to_first();
+    chunk_cursor = semi_idx + 1;
+    // there is no need to mutate the equal mask because we're only interacting with it through the bit window
+  }
+
+  let key_start = offset + chunk_cursor as usize;
+  // the window over leftovers after the last semicolon
+  let bit_window = Mask::trailing_window(chunk_cursor);
+  let eq_in_window = vector_eq.window(bit_window);
+
+  // the state only matters cross chunk so we mutate it once we exit
+  *state = if eq_in_window.has_match() {
+    // there is an equal sign in the window, meaning the chunk ends on a value
+    State::Value {
+      key_start,
+      key_length: (eq_in_window.first_match() - chunk_cursor) as usize,
+    }
+  } else {
+    // there are no equal signs after the latest semicolon
+    // meaning the chunk ends on a key
+    State::Key { key_start }
   }
 }
 
@@ -120,7 +308,7 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
   let chunk = V::load_unaligned(data, 0);
   let mask = chunk.eq(byte).movemask();
   if mask.has_match() {
-    return Some(mask.first_match().as_index());
+    return Some(mask.first_match() as usize);
   }
 
   // 3. read the rest of the data in vector-size aligned chunks
@@ -145,25 +333,25 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
 
     let mask = chunk_0.movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos + 0 * V::SIZE);
     }
 
     let mask = chunk_1.movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos + 1 * V::SIZE);
     }
 
     let mask = chunk_2.movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos + 2 * V::SIZE);
     }
 
     let mask = chunk_3.movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos + 3 * V::SIZE);
     }
 
@@ -177,7 +365,7 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
     let chunk = V::load_aligned(data, offset);
     let mask = chunk.eq(byte).movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos);
     }
 
@@ -194,7 +382,7 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
     let chunk = V::load_unaligned(data, offset);
     let mask = chunk.eq(byte).movemask();
     if mask.has_match() {
-      let pos = mask.first_match().as_index();
+      let pos = mask.first_match() as usize;
       return Some(offset + pos);
     }
   }
@@ -205,6 +393,21 @@ fn find_first(data: &[u8], byte: u8) -> Option<usize> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn test_tag_parsing() {
+    let src = "@a=b;c=d;user-type= ";
+    let tags = parse(src, &mut 0).unwrap();
+    let a = tags[0];
+    assert_eq!(&src[a.key()], "a");
+    assert_eq!(&src[a.value()], "b");
+    let c = tags[1];
+    assert_eq!(&src[c.key()], "c");
+    assert_eq!(&src[c.value()], "d");
+    let user_type = tags[2];
+    assert_eq!(&src[user_type.key()], "user-type");
+    assert_eq!(&src[user_type.value()], "");
+  }
 
   #[test]
   fn find_first_test() {

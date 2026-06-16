@@ -8,13 +8,13 @@ cfg_if::cfg_if! {
     )
   ))] {
     pub(super) mod x86_64;
-    pub(super) use x86_64::Vector;
+    pub(super) use x86_64::{Mask, Vector};
   } else if #[cfg(all(
     target_arch = "aarch64",
     target_feature = "neon"
   ))] {
     pub(super) mod aarch64;
-    pub(super) use aarch64::Vector;
+    pub(super) use aarch64::{Mask, Vector};
   } else {
     compile_error!("unsupported target architecture - please disable the `simd` feature");
   }

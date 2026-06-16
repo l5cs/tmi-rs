@@ -80,14 +80,24 @@ impl Mask {
   }
 
   #[inline(always)]
-  pub fn first_match(&self) -> Match {
-    Match(self.0.trailing_zeros() as usize)
+  pub fn first_match(&self) -> u32 {
+    self.0.trailing_zeros()
   }
 
   /// Clear all bits up to and including `m`.
   #[inline(always)]
   pub fn clear_to(&mut self, m: Match) {
     self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - m.0));
+  }
+
+  #[inline(always)]
+  pub fn clear_to_first(&mut self) {
+    self.0 &= self.0 - 1;
+  }
+
+  #[inline(always)]
+  pub fn window(&self, window: u32) -> u32 {
+    self.0 & window
   }
 }
 

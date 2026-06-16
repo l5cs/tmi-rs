@@ -110,6 +110,13 @@ impl Vector {
 #[repr(transparent)]
 pub struct Mask(u64);
 
+#[cfg(debug_assertions)]
+impl core::fmt::Debug for Mask {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    write!(f, "{:064b}", self.0)
+  }
+}
+
 impl Mask {
   #[inline(always)]
   pub fn has_match(&self) -> bool {
@@ -117,38 +124,132 @@ impl Mask {
     self.0 != 0
   }
 
+  /// return the position of the first match in the chunk
+  ///
+  /// neon packs 4 bits per character, so we divide by 4
   #[inline(always)]
-  pub fn first_match(&self) -> Match {
-    Match(self.0.trailing_zeros() as usize)
+  pub fn first_match(&self) -> u32 {
+    (self.0.trailing_zeros() >> 2) as u32
   }
 
-  /// Clear all bits up to and including `m`.
+  /// clear the first match
+  ///
+  /// ```text
+  /// 11110000_11110000 - input
+  /// 11110000_00000000 - output
+  /// ```
   #[inline(always)]
-  pub fn clear_to(&mut self, m: Match) {
-    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - (m.0 + 3)));
+  pub fn clear_to_first(&mut self) {
+    self.0 &= !(0xffff_ffff_ffff_ffff >> (63 - ((self.first_match() << 2) + 3)));
   }
-}
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Match(usize);
-
-impl Match {
+  /// intersect this mask with `window`, returning a new mask
+  ///
+  /// ```text
+  /// 11110000_11110000 - mask
+  /// 00001111_11110000 - window
+  /// 00000000_11110000 - output
+  /// ```
   #[inline(always)]
-  pub fn as_index(self) -> usize {
-    // There are 4 bits per character, so divide the trailing zeros by 4 (shift right by 2).
-    self.0 >> 2
+  pub fn window(&self, window: Self) -> Self {
+    Self(self.0 & window.0)
+  }
+
+  /// get the bit window from the start of the chunk up to the first match
+  ///
+  /// ```text
+  ///    b   ;    =   a
+  /// 00001111_00000000 - input - the first match is on character index 3
+  /// 00000001_11111111 - output - window covers up to the first semicolon
+  /// ```
+  ///
+  /// handles the empty mask case by returning all-ones (the full chunk window)
+  #[inline(always)]
+  pub fn leading_window(&self) -> Self {
+    let lsb = self.0 & self.0.wrapping_neg();
+    Self(lsb.wrapping_shl(1).wrapping_sub(1))
+  }
+
+  /// create the bit window from a character index to the end of the mask
+  ///
+  /// `from` is a character index; neon encodes 4 bits per character
+  ///
+  /// ```text
+  ///      1 (* 4) ~~~~ - position
+  /// 11111111_11110000 - output
+  /// ```
+  #[inline(always)]
+  pub fn trailing_window(from: u32) -> Self {
+    let bit_pos = from << 2;
+    // using a larger integer in the case that `from` is 32
+    // then the 1_u128 << from -> truncating to 0
+    Self(
+      !(1_u128
+        .checked_shl(bit_pos)
+        .unwrap_or_default()
+        .wrapping_sub(1)) as u64,
+    )
+  }
+
+  /// create a bitmask covering bits from `from` (inclusive) to `to` (exclusive) in character indices
+  ///
+  /// neon encodes 4 bits per character, so character indices are multiplied by 4
+  ///
+  /// ```text
+  /// 11110000_11110000 - from 1 to 3
+  ///    ^        ^  
+  /// 00001111_11110000 - output
+  /// ```
+  #[inline(always)]
+  pub fn between_window(from: u32, to: u32) -> Self {
+    let from_bit = from << 2;
+    let to_bit = to << 2;
+    // using a larger integer in the case that `from` is 32
+    let until = 1_u128
+      .checked_shl(to_bit)
+      .unwrap_or_default()
+      .wrapping_sub(1);
+    let since = !(1_u128
+      .checked_shl(from_bit)
+      .unwrap_or_default()
+      .wrapping_sub(1));
+    Self((until & since) as u64)
   }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
   use super::*;
 
   #[test]
-  fn test_clear_to() {
+  fn test_clear_to_first() {
     let mut mask = Mask(0b00000000_11110000_11111111_00000000);
-    mask.clear_to(mask.first_match());
+    mask.clear_to_first();
     assert_eq!(mask.0, 0b00000000_11110000_11110000_00000000);
+  }
+
+  #[test]
+  fn test_trailing_window() {
+    let mask = Mask::trailing_window(2);
+    assert_eq!(mask.0, 0xffff_ffff_ffff_ff00);
+
+    let max_zeros = 0_u64.trailing_zeros(); // = 64
+    let mask = Mask::trailing_window(max_zeros);
+    // should be zeroed since there are no bits after 64th position in a 64 bit vector
+    assert_eq!(mask.0, 0);
+  }
+
+  #[test]
+  fn test_between_window() {
+    let mask = Mask::between_window(2, 7);
+    assert_eq!(mask.0, 0x0fff_ff00);
+
+    // full window
+    let mask = Mask::between_window(0, 64);
+    assert_eq!(mask.0, !0);
+
+    // zero length window
+    let mask = Mask::between_window(1, 1);
+    assert_eq!(mask.0, 0);
   }
 }

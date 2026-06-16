@@ -1,6 +1,7 @@
+use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{black_box, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mimalloc::MiMalloc;
 use tmi::IrcMessageRef;
 
@@ -44,16 +45,13 @@ fn twitch(c: &mut Criterion) {
   });
 }
 
-fn criterion() -> Criterion {
-  Criterion::default()
+criterion_group!(
+  name = benches;
+  config = Criterion::default()
     .configure_from_args()
     .warm_up_time(Duration::from_millis(100))
     .measurement_time(Duration::from_secs(1))
-    .sample_size(50)
-}
-
-fn main() {
-  let mut criterion = criterion();
-  twitch(&mut criterion);
-  criterion.final_summary();
-}
+    .sample_size(50);
+  targets = twitch
+);
+criterion_main!(benches);
